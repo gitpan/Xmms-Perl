@@ -20,6 +20,11 @@ Cutter Brown <cutter@cp.net> for help squashing bugs.
 
 =over 3
 
+=item 0.12 - March 20, 2002
+
+use glib-config to help find glib.h
+[Julio Blanco Perez <jblanco@telecable.es>]
+
 =item 0.11 - March 20, 2002
 
 workaround bug in xmms_remote_playist() that caused hang with xmms 1.2.7

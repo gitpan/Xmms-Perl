@@ -15,7 +15,7 @@ use Text::ParseWords ();
     no strict;
     @ISA     = qw(Exporter);
     @EXPORT  = qw(shell);
-    $VERSION = '0.11';
+    $VERSION = '0.12';
 }
 
 my $Help;

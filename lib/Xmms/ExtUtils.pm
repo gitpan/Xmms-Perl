@@ -5,8 +5,17 @@ use Config;
 use DynaLoader ();
 
 sub inc {
-    chomp(my $inc = `xmms-config --cflags`);
-    $inc;
+    my @inc;
+
+    for my $cflags (`xmms-config --cflags`,
+                    `glib-config --cflags`)
+    {
+        next unless $cflags;
+        chomp $cflags;
+        push @inc, $cflags;
+    }
+
+    "@inc";
 }
 
 my @XFree86 = qw(-lXxf86vm -lXxf86dga -lXxf86misc);
