@@ -20,6 +20,16 @@ Cutter Brown <cutter@cp.net> for help squashing bugs.
 
 =over 3
 
+=item 0.09 - January 31, 1999
+
+`track' now accepts a range
+
+$file is now set to $remote->get_playlist_file when running +perl code
+
+Xmms::urldb() and $ENV{HOME}/.xmms/.perlurldb for url completion
+
+Xmms::is_cpl() function for external Xmms::shell plugins (Audio::RaveMP)
+
 =item 0.08 - December 27, 1999
 
 xmms-playlist-delete.pat updated for xmms-0.9.5.1

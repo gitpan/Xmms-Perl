@@ -15,7 +15,7 @@ use Text::ParseWords ();
     no strict;
     @ISA     = qw(Exporter);
     @EXPORT  = qw(shell);
-    $VERSION = '0.08';
+    $VERSION = '0.09';
 }
 
 my $Help;
@@ -81,6 +81,8 @@ my $is_cpl = 0;
 my $Signal = 0;
 my $Pid = 0;
 
+sub is_cpl { $is_cpl }
+
 eval {
     require Xmms::SongChange;
 };
@@ -92,6 +94,22 @@ sub init_songchange {
     return if $sc;
     $sc = Xmms::SongChange->new($remote);
     tie %jtime, 'Xmms::Jtime', $sc;
+}
+
+my @urldb = ();
+sub urldb { \@urldb }
+
+sub init_urldb {
+    if (open FH, "$ENV{HOME}/.xmms/.perlurldb") {
+	while (<FH>) {
+	    s/^\s+//;
+	    next unless /^http:/;
+	    s/\s+$//;
+	    chomp;
+	    push @urldb, $_;
+	}
+	close FH;
+    }
 }
 
 sub init {
@@ -110,6 +128,8 @@ sub init {
 	alarm 0;
 	$remote->all_win_toggle(0);
     }
+
+    init_urldb();
 
     if ($use_sc) {
 	init_songchange();
@@ -280,6 +300,8 @@ EOF
 sub run_cmd {
     if ($_[0] =~ s/\+//) {
 	eval "{package Xmms; no strict; @_}";
+	Xmms::Cmds(1); #sync
+	$Help = ""; #invalidate cache
     }
     else {
 	for my $cmd (split /;/, $_[0]) {
@@ -1142,7 +1164,7 @@ sub Xmms::urlcomplete {
 	}
     }
     else {
-	return qw(http://);
+	return @urldb ? (grep /^$arg/, @urldb) : qw(http://);
     }
 }
 
@@ -1154,6 +1176,7 @@ my $xmms_scalars = sub {
 
 sub Xmms::interp {
     my $string = shift;
+    $Xmms::file = $remote->get_playlist_file;
     eval "{package Xmms; no strict; qq($string)}";
 }
 
@@ -1254,8 +1277,10 @@ sub url ($$) {
     return @urls if $is_cpl;
 
     if ($args) {
-	Xmms::urlsel($args);
-	$remote->playlist_add_url($args);
+	Xmms::urlsel($urls[0]);
+	for (@urls) {
+	    $remote->playlist_add_url($_);
+	}
 	$remote->play;
     }
 }
@@ -1453,10 +1478,20 @@ sub track ($;$) {
     my $pos = $remote->get_playlist_pos;
     my $len = $remote->get_playlist_length;
     my $cd = Xmms::CD->new;
+    my @range = ();
+
+    if ($args and $args =~ /\D+/) {
+	@range = map { $_-1 } @{ Xmms::range($args) };
+	$args = "";
+    }
 
     if (!$args or $args eq ' ') {
 	my @retval;
-	for (0..$len-1) {
+	unless (@range) {
+	    @range = 0..$len-1;
+	}
+	for (@range) {
+	    last if $_ >= $len;
 	    my $num = $_ + 1;
 	    my $title = $cd->get_playlist_title($_);
 	    my $desc = "$num - $title";
@@ -1484,8 +1519,9 @@ sub track ($;$) {
 	    }
 	}
 	return (@retval) if $is_cpl;
-	my $pager = Xmms::pager();
-	print $pager join "\n", @retval, "";
+	#local $SIG{PIPE} = 'IGNORE';
+	#local $SIG{INT} = 'IGNORE';
+	print {Xmms::pager()} join "\n", @retval, "";
 	return;
     }
 
@@ -2154,6 +2190,10 @@ matches against playlist titles.
 
 This function is used for interacting with the current playlist.
 With no arguments, it will print the entire list.
+When given a range argument, it will print the info for those tracks, for example:
+
+ xmms> track 100..230
+
 Given a number or title name, it will jump to that track in the playlist.
 
 =item url
@@ -2161,6 +2201,9 @@ Given a number or title name, it will jump to that track in the playlist.
 Add a url to the playlist for streaming.
 TAB completion on the special character `-' will recall the last url
 used with this command.
+
+If I<Xmms::shell> finds the I<$ENV{HOME}/.xmms/.perlurldb> file when
+starting up, the urls in this file will be used for url tab completion.
 
 =item volume
 
