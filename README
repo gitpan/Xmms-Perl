@@ -1,0 +1,40 @@
+
+	The source files in this distribution are 
+	Copyright (C) 1999, Doug MacEachern, and are licensed for
+	use under the same terms as Perl itself.
+
+You need xmms installed to use this package: http://www.xmms.org/
+
+This package provides the following modules:
+
+ Xmms::Remote - Perl interface to the xmms_remote API
+
+ Xmms::Config - Perl interface to the xmms_cfg API
+
+ Xmms - Exports the remote control shell routine
+
+ Xmms::Plugin - Embeds a Perl interpreter inside xmms and provides
+                Input/Output/Effect/General plugin interfaces for
+                Perl (not yet released, may never be)
+
+
+For best results, install the bundle via:
+
+ perl -MCPAN -e 'install Bundle::Xmms'
+
+Motivation:
+I am a programmer and I need good tunes for programming fuel.
+After my dsl installation last week, I finally discovered for myself,
+MP3z are the coolest thing since sliced bread.  xmms is a wonderful
+tool, but I am not a fan of the GUI.  Not that it isn't well done, it
+is very slick.  But, my laptop mouse pad is flakey and I can never
+remember what buttons do what.  The interactive shell provides command 
+history, command/file completion and emacs key bindings.  The shell
+also adds quite a bit functionality over what can be done with xmms
+from the command line. And a bit more than the gui, such as searching.
+See `perldoc Xmms' for feature details.
+
+Enjoy,
+-Doug
+
+dougm@cp.net
