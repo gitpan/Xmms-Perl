@@ -6,6 +6,7 @@ gboolean	T_IV
 gchar *		T_PV
 GList *		T_GLIST
 gchar **	T_GCHAR_LIST
+gfloat		T_IV
 
 INPUT
 

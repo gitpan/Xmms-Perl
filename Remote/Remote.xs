@@ -88,6 +88,31 @@ static AV *playlist_do(gint session, playlist_do_func func)
     return av;
 }
 
+static AV *bands_2av(gfloat *bands)
+{
+    AV *av = newAV();
+    int i;
+    for (i=0; i<10; i++) {
+        av_push(av, newSVnv(bands[i]));
+    }
+    return av;
+}
+
+static gfloat *av_2bands(SV *avrv)
+{
+    AV *av = svrv_2av(avrv);
+    gfloat *bands = (gfloat *)safemalloc(sizeof(gfloat) * 10);
+    I32 i;
+    if (AvFILL(av)+1 != 10) {
+        croak("wrong number of bands %d, should be 10", (int)AvFILL(av)+1);
+    }
+    for (i=0; i<10; i++) {
+        SV *sv = *av_fetch(av, i, FALSE);
+        bands[i] = (gfloat)SvNV(sv);
+    }
+    return bands;
+}
+
 static SV *size_string(size_t size)
 {
     SV *sv = newSVpv("    -", 5);
@@ -152,20 +177,28 @@ xmms_remote_stop(session)
     Xmms::Remote session
 
 void
-xmms_remote_playlist(session, avrv, enqueue=0)
+xmms_remote_quit(session)
     Xmms::Remote session
-    SV *avrv
+
+void
+xmms_remote_playlist(session, list, enqueue=0)
+    Xmms::Remote session
+    GList *list
     gboolean enqueue
 
-    PREINIT:
-    gchar **list;
-    gint num;
-    int i;
-
     CODE:
-    list = avrv_2gchar_list(avrv, &num);
-    xmms_remote_playlist(session, list, num, enqueue);
-    g_free(list);
+    if (!enqueue) {
+        xmms_remote_playlist_clear(session);
+    }
+
+    xmms_remote_playlist_add(session, list);
+
+    if (!enqueue) {
+        xmms_remote_play(session);
+    }
+
+    CLEANUP:
+    g_list_free(list);
 
 gint
 xmms_remote_get_version(session)
@@ -428,6 +461,18 @@ xmms_remote_toggle_aot(session, ontop)
     Xmms::Remote session
     gboolean ontop
 
+gboolean
+xmms_remote_is_main_win(session)
+    Xmms::Remote session
+
+gboolean
+xmms_remote_is_pl_win(session)
+    Xmms::Remote session
+
+gboolean
+xmms_remote_is_eq_win(session)
+    Xmms::Remote session
+
 void 
 xmms_remote_eject(session)
     Xmms::Remote session
@@ -451,6 +496,66 @@ xmms_remote_toggle_repeat(session)
 void 
 xmms_remote_toggle_shuffle(session)
     Xmms::Remote session
+
+gint
+xmms_remote_is_repeat(session)
+    Xmms::Remote session
+
+gint
+xmms_remote_is_shuffle(session)
+    Xmms::Remote session
+
+void
+xmms_remote_get_eq(session)
+    Xmms::Remote session
+
+    PREINIT:
+    gfloat preamp;
+    gfloat *bands;
+
+    PPCODE:
+    xmms_remote_get_eq(session, &preamp, &bands);
+    if (GIMME_V == G_ARRAY) {
+        XPUSHs(sv_2mortal(newSVnv(preamp)));
+    }
+    XPUSHs(sv_2mortal(newRV_noinc((SV*)bands_2av(bands))));
+    g_free(bands);
+
+void
+xmms_remote_set_eq(session, preamp, bandsav)
+    Xmms::Remote session
+    gfloat preamp
+    SV *bandsav
+
+    PREINIT:
+    gfloat *bands;
+
+    CODE:
+    bands = av_2bands(bandsav);
+    xmms_remote_set_eq(session, preamp, bands);
+
+    CLEANUP:
+    g_free(bands);
+
+gfloat
+xmms_remote_get_eq_preamp(session)
+    Xmms::Remote session
+
+gfloat
+xmms_remote_get_eq_band(session, band)
+    Xmms::Remote session
+    gint band
+
+void
+xmms_remote_set_eq_preamp(session, preamp)
+    Xmms::Remote session
+    gfloat preamp
+
+void
+xmms_remote_set_eq_band(session, band, value)
+    Xmms::Remote session
+    gint band
+    gfloat value
 
 MODULE = Xmms::Remote   PACKAGE = Xmms    PREFIX = xmms_
 

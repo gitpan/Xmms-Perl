@@ -7,15 +7,17 @@ use DynaLoader ();
 {
     no strict;
     @ISA = qw(DynaLoader);
-    $VERSION = '0.01';
+    $VERSION = '0.03';
     __PACKAGE__->bootstrap($VERSION);
 }
 
 sub all_win_toggle {
     my($remote, $show) = @_;
     for (qw(main pl eq)) {
-	my $meth = "${_}_win_toggle";
-	$remote->$meth($show);
+        my $meth = "${_}_win_toggle";
+        my $is = "is_${_}_win";
+        next if $remote->$is() == $show;
+        $remote->$meth($show);
     }
 }
 

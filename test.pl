@@ -63,10 +63,10 @@ my($vl, $vr) = $remote->get_volume;
 $remote->set_main_volume(25);
 ok $vl;
 ok $vr;
-if ($config->read(xmms => 'repeat') eq 'TRUE') {
+if ($remote->is_repeat) {
     $remote->toggle_repeat;
 }
-if ($config->read(xmms => 'shuffle') eq 'TRUE') {
+if ($remote->is_shuffle) {
     $remote->toggle_shuffle;
 }
 
@@ -123,7 +123,7 @@ $remote->stop;
 Xmms::sleep(0.25);
 ok !$remote->is_playing;
 
-kill 9, $Pid if $Pid;
+$remote->quit if $Pid;
 
 #as you were
 if (@$orig_files) {

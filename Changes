@@ -20,6 +20,21 @@ Cutter Brown <cutter@cp.net> for help squashing bugs.
 
 =over 3
 
+=item 0.11 - March 20, 2002
+
+workaround bug in xmms_remote_playist() that caused hang with xmms 1.2.7
+
+fix bug in all_win_toggle which causes prefs win to popup with xmms 1.2.4
+thanks to cutter brown for the spot
+
+remove Audio::CD cddb support now that xmms has native cddb support
+
+Xmms::Cmd::quit now uses $remote->quit rather than kill $sig, $pid
+
+new Xmms::Remote methods: quit, is_{main,pl,eq}_win, is_{repeat,toggle}
+                          {get,set}_eq_{band,preamp}
+                          {get,set}_eq
+
 =item 0.10 - May 16, 2000
 
 fix bug where `+' in any command triggered an eval, now anchored to

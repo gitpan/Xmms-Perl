@@ -15,7 +15,7 @@ use Text::ParseWords ();
     no strict;
     @ISA     = qw(Exporter);
     @EXPORT  = qw(shell);
-    $VERSION = '0.10';
+    $VERSION = '0.11';
 }
 
 my $Help;
@@ -646,7 +646,7 @@ sub eject {
 	$remote->eject;
 	return;
     }
-    %Xmms::CD::order = ();
+
     if ($cd_is_playing) {
 	$remote->stop;
 	1 while $remote->is_playing;
@@ -658,42 +658,6 @@ sub eject {
     }
 }
 
-sub track_stat {
-    my $self = shift;
-    unless ($self->{tracks}) {
-	my $cd = $self->{id}->stat;
-	my $data = $self->{id}->cddb->lookup;
-	$self->{data} = $data;
-	$self->{cd} = $cd;
-	$self->{tracks} = $data->tracks($cd);
-    }
-}
-
-sub get_playlist_title {
-    my($self, $ix) = @_;
-    $ix = $Xmms::CD::order{$ix} if exists $Xmms::CD::order{$ix};
-    my $title = $remote->get_playlist_title($ix);
-
-    unless ($self->{id} and $self->cd_is_playing) {
-	return $title;
-    }
-
-    $self->track_stat;
-    my $name = $self->{tracks}->[$ix]->name;
-    if ($name =~ /Unknown/) {
-	return $title;
-    }
-
-    return join ' - ', $self->{data}->artist, $name;
-}
-
-sub title {
-    my $self = shift;
-    return "" unless $self->{id};
-    $self->track_stat;
-    return join ' / ', $self->{data}->artist, $self->{data}->title; 
-}
-
 package Xmms::Sort;
 
 sub order {
@@ -701,13 +665,14 @@ sub order {
     my $files = $remote->get_playlist_files;
     my $range = Xmms::range($args);
     my @new;
-    %Xmms::CD::order = ();
     my $i = 0;
+
     for (@$range) {
 	$files->[$_-1] =~ /(\d+)\.cda$/;
 	$Xmms::CD::order{$i++} = int($1)-1;
 	push @new, $files->[$_-1];
     }
+
     $remote->playlist(\@new);
 }
 
@@ -866,7 +831,7 @@ sub quit {
     Xmms::resume_config(1);
     $pconfig->write_file(Xmms::Config->perlfile);
     print Xmms::highlight(Msg => "Goodbye\n");
-    kill $sig_name{'TERM'}, $Pid if $Pid;
+    $remote->quit;
     exit;
 }
 
@@ -1145,7 +1110,7 @@ sub current {
 
     my $track = $remote->get_playlist_pos;
     print Xmms::highlight(Msg => sprintf "%d - %s\n", $track+1, 
-			  Xmms::CD->new->get_playlist_title($track)); 
+			  $remote->get_playlist_title($track)); 
 
     my($rate, $freq, $nch) = $remote->get_info;
     print Xmms::highlight(Msg => sprintf "[%s] [%d kbps][%d kHz][%s]\n", 
@@ -1157,7 +1122,6 @@ sub current {
 sub pause   { $remote->pause }
 sub stop    { $remote->stop }
 sub clear   { 
-    %Xmms::CD::order = ();
     if ($use_sc) {
 	$sc->clear;
     }
@@ -1406,7 +1370,6 @@ sub play ($;$) {
     my($self, $args) = @_;
 
     unless ($is_cpl) {
-	%Xmms::CD::order = ();
 	if ($args) {
 	    if ($args ne '/cdrom' and -d $args) {
 		Xmms::filesel_path($args);
@@ -1504,7 +1467,6 @@ sub track ($;$) {
     my $title_maybe = $args;
     my $pos = $remote->get_playlist_pos;
     my $len = $remote->get_playlist_length;
-    my $cd = Xmms::CD->new;
     my @range = ();
 
     if ($args and $args =~ /\D+/) {
@@ -1520,7 +1482,7 @@ sub track ($;$) {
 	for (@range) {
 	    last if $_ >= $len;
 	    my $num = $_ + 1;
-	    my $title = $cd->get_playlist_title($_);
+	    my $title = $remote->get_playlist_title($_);
 	    my $desc = "$num - $title";
 	    my $jt = " {$jtime{$num}}" if $jtime{$num};
 	    my($ctime, $repeat);
@@ -1564,7 +1526,7 @@ sub track ($;$) {
 	my %titles;
 
 	for (0..$len-1) {
-	    my $title = $cd->get_playlist_title($_);
+	    my $title = $remote->get_playlist_title($_);
 	    $title =~ s/ /-/g;
 	    $titles{$title} = $_; 
 	}
