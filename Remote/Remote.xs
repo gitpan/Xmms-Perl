@@ -2,6 +2,8 @@
 #include "perl.h"
 #include "XSUB.h"
 
+#include "fcntl.h"
+
 #undef list
 
 #include "xmms/xmmsctrl.h"
@@ -80,6 +82,7 @@ static AV *playlist_do(gint session, playlist_do_func func)
     for (i=0; i < xmms_remote_get_playlist_length(session); i++) {
 	gchar *title = (*func)(session, i);
 	av_push(av, newSVpv(title, 0));
+        g_free(title);
     }
 
     return av;
@@ -108,6 +111,19 @@ static SV *size_string(size_t size)
     }
 
     return sv;
+}
+
+static int waitfor_audio(gint usec)
+{
+    for (;;) {
+	int fd;
+	if ((fd = open("/dev/dsp", O_WRONLY)) > 0) {
+	    close(fd);
+	    return 1;
+	}
+	xmms_usleep(usec);
+    }
+    return 0;
 }
 
 MODULE = Xmms::Remote   PACKAGE = Xmms::Remote   PREFIX = xmms_remote_
@@ -304,6 +320,9 @@ gchar *
 xmms_remote_get_skin(session)
     Xmms::Remote session
 
+    CLEANUP:
+    g_free(RETVAL);
+
 void 
 xmms_remote_set_skin(session, skinfile)
     Xmms::Remote session
@@ -313,6 +332,9 @@ gchar *
 xmms_remote_get_playlist_file(session, pos=CURRENT_POS)
     Xmms::Remote session
     gint pos
+
+    CLEANUP:
+    g_free(RETVAL);
 
 AV *
 xmms_remote_get_playlist_files(session)
@@ -328,6 +350,9 @@ gchar *
 xmms_remote_get_playlist_title(session, pos=CURRENT_POS)
     Xmms::Remote session
     gint pos
+
+    CLEANUP:
+    g_free(RETVAL);
 
 AV *
 xmms_remote_get_playlist_titles(session)
@@ -435,4 +460,8 @@ size_string(size)
 
 void
 xmms_usleep(usec)
+    gint usec
+
+void
+waitfor_audio(usec=350)
     gint usec

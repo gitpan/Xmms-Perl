@@ -206,9 +206,11 @@ static void sc_stop(sc *obj)
     sc_lock(obj);
     pthread_cancel(obj->thread);
     pthread_join(obj->thread, &status);
+#if 0
     if (status != PTHREAD_CANCELED) {
 	/* uhhh */
     }
+#endif
     sc_unlock(obj);
 }
 

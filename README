@@ -17,6 +17,10 @@ This package provides the following modules:
                 Input/Output/Effect/General plugin interfaces for
                 Perl (not yet released, may never be)
 
+Jean-Baptiste Nivoit has written an emacs mode to interact with
+Xmms::shell, which you can find here:
+
+ http://www.multimania.com/jbn/software/xmms-mode.el
 
 For best results, install the bundle via:
 

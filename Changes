@@ -20,6 +20,24 @@ Cutter Brown <cutter@cp.net> for help squashing bugs.
 
 =over 3
 
+=item 0.10 - May 16, 2000
+
+fix bug where `+' in any command triggered an eval, now anchored to
+beginning of line
+
+Xmms::ExtUtils now uses xmms-config instead of gtk-config
+
+plug memory leak in Xmms::Remote->get_* functions that return gchar *
+[Oleg Smirnov <smirnov@nfra.nl>]
+
+fix bug in shell where running external commands left zombies
+
+added Xmms::waitfor_audio() function
+
+added 'list size ...'
+
+fix linkage for XFree86 [Paul Schinder <schinder@pobox.com>]
+
 =item 0.09 - January 31, 1999
 
 `track' now accepts a range

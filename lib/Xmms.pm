@@ -15,7 +15,7 @@ use Text::ParseWords ();
     no strict;
     @ISA     = qw(Exporter);
     @EXPORT  = qw(shell);
-    $VERSION = '0.09';
+    $VERSION = '0.10';
 }
 
 my $Help;
@@ -298,7 +298,7 @@ EOF
 }
 
 sub run_cmd {
-    if ($_[0] =~ s/\+//) {
+    if ($_[0] =~ s/^\s*\+//) {
 	eval "{package Xmms; no strict; @_}";
 	Xmms::Cmds(1); #sync
 	$Help = ""; #invalidate cache
@@ -344,6 +344,7 @@ sub resolve {
 
 sub rrun_cmd {
     my($line) = @_;
+    local *CMD;
     my($cmd, $args) = split /\s+/, $line, 2;
 
     unless ($is_cpl) {
@@ -360,6 +361,7 @@ sub rrun_cmd {
     elsif (open CMD, "$cmd $args|") {
 	local $/;
 	print {Xmms::pager()} <CMD>;
+	close CMD;
     }
     else {
 	print Xmms::highlight(Error => "unknown command: `$cmd'\n");
@@ -850,12 +852,21 @@ sub export ($@) {
 
 sub help { print {Xmms::pager()} Xmms::helpstr() }
 
+my %sig_name = ();
+{
+    my $i = 0;
+
+    for (split /\s+/, $Config::Config{sig_name}) {
+	$sig_name{$_} = $i++;
+    }
+}
+
 sub quit {
     $remote->stop;
     Xmms::resume_config(1);
-    print Xmms::highlight(Msg => "Goodbye\n");
-    kill 9, $Pid if $Pid;
     $pconfig->write_file(Xmms::Config->perlfile);
+    print Xmms::highlight(Msg => "Goodbye\n");
+    kill $sig_name{'TERM'}, $Pid if $Pid;
     exit;
 }
 
@@ -1302,6 +1313,22 @@ sub Xmms::playlist_load {
 
 {
     package Xmms::List;
+
+    sub size {
+	my($file) = @_;
+	local *FH;
+	open FH, $file;
+	my $size = 0;
+	while (<FH>) {
+	    chomp;
+	    next unless -e $_;
+	    my $fsize = -s _;
+	    $size += $fsize;
+	    printf "%s %s\n", Xmms::basename($_), Xmms::size_string($fsize);
+	}
+	close FH;
+	printf "Total: %s\n", Xmms::size_string($size);
+    }
 
     sub save {
 	my($file, $is_config) = @_;
@@ -2030,6 +2057,14 @@ Example:
  playlist saved
 
  xmms> list ~/mp3/fav-tracks      #load list
+
+To measure the size of a list:
+
+ xmms> list size ~/mp3/slipknot.m3u
+ slipknot_742617000027.mp3  560k
+ slipknot_sic.mp3  3.1M
+ ...
+ Total: 40.2M
 
 =item mtime
 
