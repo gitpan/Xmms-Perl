@@ -9,12 +9,13 @@ use Exporter ();
 use Symbol ();
 use File::Find qw(finddepth);
 use Data::Dumper ();
+use Text::ParseWords ();
 
 {
     no strict;
     @ISA     = qw(Exporter);
     @EXPORT  = qw(shell);
-    $VERSION = '0.07';
+    $VERSION = '0.08';
 }
 
 my $Help;
@@ -34,8 +35,13 @@ sub helpstr {
 	    $options = '[' . join('|', @{ $sub->() }) . ']';
 	}
 	if (my $p = prototype $cv) {
-	    $p =~ s/^.//;
-	    $args = ($p =~ /^;/) ? "[arg]" : "arg";
+	    if ($p eq '*') {
+		$args = "(user defined)";
+	    }
+	    else {
+		$p =~ s/^.//;
+		$args = ($p =~ /^;/) ? "[arg]" : "arg";
+	    }
 	}
 	my $retval = $cmd . ' ' x (10 - length($cmd));
 	$retval .= $options ? "$options $args" : $args;
@@ -69,7 +75,7 @@ my %jtime;
     sub STORE { shift->[0]->jtime_STORE(@_) }
 }
 
-my($remote, $config, $sc, $term, @history);
+my($remote, $config, $pconfig, $sc, $term, @history);
 my $use_sc = 0;
 my $is_cpl = 0;
 my $Signal = 0;
@@ -90,6 +96,7 @@ sub init_songchange {
 
 sub init {
     $config = Xmms::Config->new(Xmms::Config->file);
+    $pconfig = Xmms::Config->new(Xmms::Config->perlfile);
     $remote = Xmms::Remote->new;
 
     unless ($remote->is_running) {
@@ -136,6 +143,8 @@ sub shell {
 
     my $attr = $term->Attribs;
     $attr->{completion_function} = \&cpl;
+    $readline::rl_completer_word_break_characters = 
+      $readline::rl_basic_word_break_characters = "\\\t\n' \"`\@><=;|&{(";
 
     init_keybindings();
     $sc->run if $sc;
@@ -151,7 +160,7 @@ sub shell {
     }
 }
 
-sub boot {
+sub version {
     print "xmms shell -- remote control v$Xmms::VERSION\n";
 
     printf "ReadLine support..........%s\n", 
@@ -166,6 +175,10 @@ sub boot {
 
     print "Term::ANSIColor support...", ($INC{'Term/ANSIColor.pm'} ?
 	"enabled" : "available"), "\n";
+}
+
+sub boot {
+    version();
 
     my $op = $config->read(xmms => 'output_plugin');
     if ($op =~ /disk_writer/) {
@@ -218,6 +231,7 @@ my %keybindings = (
     'M-m' => 'mtime',
     'M-c' => 'crop',
     'C-c' => 'interrupt',
+    'M-e' => 'eject',
     qq/"\e[A"/  => 'volume_up',
     qq/"\e[B"/  => 'volume_down',
     qq/"\e[[A"/ => 'volume_up',
@@ -228,14 +242,31 @@ my %keybindings = (
 #    qq/"\e[[D"/,  'time_down',
 );
 
+my %window_bindings = (
+    'M-w' => 'main',
+    'M-l' => 'pl',
+    'M-q' => 'eq',
+    'M-a' => 'all',
+);
+
 sub init_keybindings {
     my @code;
+    return unless readline::->can('rl_bind');
+
     while (my($k,$v) = each %keybindings) {
 	push @code, <<EOF;
     *F_Xmms_$v = sub { Xmms::Cmd::$v(undef) } unless defined &F_Xmms_$v;
     rl_bind('$k', 'xmms_$v');
 EOF
     }
+    while (my($k,$v) = each %window_bindings) {
+	push @code, <<EOF;
+    *F_Xmms_window_$v = 
+         sub { Xmms::Cmd::window('','$v','') } unless defined &F_Xmms_window_$v;
+    rl_bind('$k', 'xmms_window_$v');
+EOF
+    }
+
     for (1..9) {
 	push @code, <<EOF;
 	sub F_Xmms_$_ { Xmms::Cmd->track($_) }
@@ -247,17 +278,39 @@ EOF
 }
 
 sub run_cmd {
-    eval {
-	rrun_cmd(@_);
-    };
+    if ($_[0] =~ s/\+//) {
+	eval "{package Xmms; no strict; @_}";
+    }
+    else {
+	for my $cmd (split /;/, $_[0]) {
+	    eval {
+		rrun_cmd(Xmms::interp($cmd));
+	    };
+	}
+    }
     print Xmms::highlight(Error => $@) if $@;
 }
 
-my @Cmds = sort grep { Xmms::Cmd->can($_) } keys %Xmms::Cmd::;
-sub Cmds { \@Cmds }
-
 use Text::Abbrev qw(abbrev);
-my $CmdAlias = abbrev @Cmds;
+
+my $CmdAlias = "";
+my @Cmds = (); 
+
+Xmms::Cmds(1); #init
+
+my $ignore_cmd = join '|', qw{can};
+
+sub Cmds {
+    if (@_) {
+	@Cmds = sort grep { 
+	    package Xmms::Cmd;
+	    defined &$_;
+	} keys %Xmms::Cmd::;
+	$CmdAlias = abbrev @Cmds;
+    }
+    \@Cmds;
+}
+
 sub CmdAlias { $CmdAlias }
 
 sub resolve {
@@ -282,6 +335,10 @@ sub rrun_cmd {
 	shift @history if @history > 100; #?
 	#$term->SetHistory(@history);
     }
+    elsif (open CMD, "$cmd $args|") {
+	local $/;
+	print {Xmms::pager()} <CMD>;
+    }
     else {
 	print Xmms::highlight(Error => "unknown command: `$cmd'\n");
     }
@@ -296,6 +353,39 @@ if ($0 eq '-e') {
 	    init() unless $remote;
 	    Xmms::Cmd->$cmd(@_ ? @_ : @ARGV);
 	};
+    }
+}
+
+my @PATH = split ':', $ENV{PATH};
+my %cmdhash;
+my $hashsize = 25;
+keys %cmdhash = $hashsize;
+
+sub xcmdcpl {
+    my $pcmd = shift;
+    my $guess = sub { grep /^$pcmd/o, keys %cmdhash };
+    my @guess = $guess->();
+    return \@guess if @guess;
+    for my $path (@PATH) {
+	local *DH;
+	opendir DH, $path or next;
+	for (readdir DH) {
+	    next unless /^$pcmd/ and -x "$path/$_";
+	    $cmdhash{$_}++;
+	}
+	closedir DH;
+    }
+    @guess = $guess->();
+    hashtrunc(\%cmdhash, $hashsize);
+    \@guess;
+}
+
+sub hashtrunc {
+    my($hash, $max) = @_;
+    my $keys = keys %$hash;
+    while ($keys-- > $max) {
+	my $k = each %$hash;
+	delete $hash->{$k};
     }
 }
 
@@ -315,7 +405,13 @@ sub cpl {
 	return @retval;
     }
 
-    return grep /^$cmd/, @Cmds;
+    my @guess = grep /^$cmd/, @Cmds;
+    return @guess if @guess;
+    unless ($rest) {
+	my $guess = xcmdcpl($cmd);
+	return @$guess;
+    }
+    return Xmms::filecomplete((split /\s+/, $rest)[-1]);
 }
 
 sub playlist_is_empty {
@@ -359,12 +455,12 @@ sub filesel_path {
     my $val = shift;
 
     if ($val) {
-	$config->write(xmms => 'perl_play_path', $val);	
+	$pconfig->write(perl => 'play_path', $val);	
     }
 
     return unless defined wantarray;
 
-    $config->read(xmms => 'perl_play_path') ||	
+    $pconfig->read(perl => 'play_path') ||	
       $config->read(xmms => 'filesel_path') ||
 	$ENV{MP3_HOME};
 }
@@ -373,24 +469,40 @@ sub urlsel {
     my $val = shift;
 
     if ($val) {
-	$config->write(xmms => 'perl_url', $val);	
+	$pconfig->write(perl => 'urlsel', $val);	
     }
 
     return unless defined wantarray;
 
-    $config->read(xmms => 'perl_url') || qw(http://);
+    $pconfig->read(perl => 'urlsel') || qw(http://);
 }
 
 sub historysel {
     my $val = shift;
 
     if ($val) {
-	$config->write(xmms => 'perl_history', $val);	
+	$pconfig->write(perl => 'historysel', $val);	
     }
 
     return unless defined wantarray;
 
-    $config->read(xmms => 'perl_history') || filesel_path();
+    $pconfig->read(perl => 'historysel') || filesel_path();
+}
+
+sub defaultpaths {
+    '.', filesel_path(), historysel(), "$ENV{HOME}/.xmms";
+}
+
+sub guesspath {
+    my($file) = @_;
+
+    return $file if $file =~ m:^/:;
+    for (defaultpaths()) {
+	my $guess = "$_/$file";
+	return $guess if -e $guess;
+    }
+
+    $file;
 }
 
 sub change_pos {
@@ -492,15 +604,29 @@ sub new {
 	  }, ref($class) || $class;
 }
 
+sub id {
+    my $self = shift;
+    return 0 unless $self->{id};
+    sprintf "%lx", $self->{id}->cddb->discid;
+}
+
+sub cd_is_playing {
+    $remote->get_playlist_file(0) =~ /\.cda$/;
+}
+
 sub eject {
     my $self = shift;
-    my $title = $remote->get_playlist_file(0);
-    unless ($title =~ /\.cda$/ and $self->{id}) {
+    my $args = shift;
+    my $cd_is_playing = $self->cd_is_playing;
+    unless ($cd_is_playing or $args eq 'cd' and $self->{id}) {
 	$remote->eject;
 	return;
     }
-    $remote->stop;
-    1 while $remote->is_playing;
+    %Xmms::CD::order = ();
+    if ($cd_is_playing) {
+	$remote->stop;
+	1 while $remote->is_playing;
+    }
     for (1..3) {
 	my $rc = $self->{id}->eject;
 	last if $rc == 0;
@@ -508,14 +634,8 @@ sub eject {
     }
 }
 
-sub get_playlist_title {
-    my($self, $ix) = @_;
-    my $title = $remote->get_playlist_title($ix);
-
-    unless ($title =~ /CD Audio Track/ and $self->{id}) {
-	return $title;
-    }
-
+sub track_stat {
+    my $self = shift;
     unless ($self->{tracks}) {
 	my $cd = $self->{id}->stat;
 	my $data = $self->{id}->cddb->lookup;
@@ -523,7 +643,18 @@ sub get_playlist_title {
 	$self->{cd} = $cd;
 	$self->{tracks} = $data->tracks($cd);
     }
+}
 
+sub get_playlist_title {
+    my($self, $ix) = @_;
+    $ix = $Xmms::CD::order{$ix} if exists $Xmms::CD::order{$ix};
+    my $title = $remote->get_playlist_title($ix);
+
+    unless ($self->{id} and $self->cd_is_playing) {
+	return $title;
+    }
+
+    $self->track_stat;
     my $name = $self->{tracks}->[$ix]->name;
     if ($name =~ /Unknown/) {
 	return $title;
@@ -532,7 +663,29 @@ sub get_playlist_title {
     return join ' - ', $self->{data}->artist, $name;
 }
 
+sub title {
+    my $self = shift;
+    return "" unless $self->{id};
+    $self->track_stat;
+    return join ' / ', $self->{data}->artist, $self->{data}->title; 
+}
+
 package Xmms::Sort;
+
+sub order {
+    my $args = shift;
+    my $files = $remote->get_playlist_files;
+    my $range = Xmms::range($args);
+    my @new;
+    %Xmms::CD::order = ();
+    my $i = 0;
+    for (@$range) {
+	$files->[$_-1] =~ /(\d+)\.cda$/;
+	$Xmms::CD::order{$i++} = int($1)-1;
+	push @new, $files->[$_-1];
+    }
+    $remote->playlist(\@new);
+}
 
 sub reverse {
     $remote->playlist([reverse @{ $remote->get_playlist_files }]);
@@ -640,6 +793,39 @@ sub Xmms::FileInfo::sort {
 
 package Xmms::Cmd;
 
+sub alias ($$) {
+    my($self, $args) = @_;
+    my($sub, $stuff) = split /\s+/, $args, 2;
+    no strict;
+    if ($stuff =~ /^(\S+)/ and $sub eq $1) {
+	die "alias recursion detected\n";
+    }
+    *{"Xmms::Cmd::$sub"} = sub (*) { Xmms::run_cmd($stuff) };
+    Xmms::Cmds(1); #sync
+    $Help = ""; #invalidate cache
+}
+
+sub export ($@) {
+    my($self, $args) = @_;
+    package Xmms;
+    no strict;
+
+    if ($is_cpl) {
+	my $arg = (split /\s+/, $args)[-1];
+	return grep /^$arg/, keys %ENV;
+    }
+
+    for my $ex (Text::ParseWords::parse_line('\s+', 0, $args)) {
+	my($key,$val) = split /=/, $ex;
+	if ($val) {
+	    $ENV{$key} = ${"Xmms::$key"} = $val;
+	}
+	else {
+	    *{"Xmms::$key"} = \$ENV{$key};
+	}
+    }
+}
+
 sub help { print {Xmms::pager()} Xmms::helpstr() }
 
 sub quit {
@@ -647,7 +833,7 @@ sub quit {
     Xmms::resume_config(1);
     print Xmms::highlight(Msg => "Goodbye\n");
     kill 9, $Pid if $Pid;
-    $config->write_file(Xmms::Config->file);
+    $pconfig->write_file(Xmms::Config->perlfile);
     exit;
 }
 
@@ -676,12 +862,12 @@ sub Xmms::resume_config {
 		     };
 	local $Data::Dumper::Indent = 0;
 	local $Data::Dumper::Terse = 1;
-	$config->write(xmms => 'perl_resume', 
-		       Data::Dumper::Dumper($resume));
+	$pconfig->write(perl => 'resume', 
+			Data::Dumper::Dumper($resume));
 	Xmms::List::save($resume->{'files'}, 1);
     }
     else {
-	$config->read(xmms => 'perl_resume');
+	$pconfig->read(perl => 'resume');
     }
 }
 
@@ -727,11 +913,12 @@ sub history ($;$) {
     }
     elsif ($args =~ s/^<//) {
 	my $fh = Symbol::gensym();
+	$args = Xmms::guesspath($args);
 	open $fh, $args or die "open $args: $!";
 	while (<$fh>) {
 	    next if /^#/;
 	    next if /^history/;
-	    print;
+	    print unless s/^\@// or /^\+/;
 	    chomp;
 	    Xmms::run_cmd($_);
 	}
@@ -740,7 +927,7 @@ sub history ($;$) {
     }
     elsif ($args =~ s/^>//) {
 	my $fh = Xmms::open_careful($args);
-	print $fh join "\n", @history;
+	print $fh join "\n", grep { !/^history/ } @history, "";
 	close $fh;
     }
     else {
@@ -761,6 +948,10 @@ sub Xmms::Usage::window {
 			    "usage: window [$opts] [hide|show]\n");
 }
 
+my %window_state = (
+    'main' => 0, 'pl' => 0, 'eq' => 0, 'all' => 0,
+);
+
 sub window ($$$) {
     my($self, $args) = @_;
     my($win, $val) = split /\s+/, $args;
@@ -774,16 +965,19 @@ sub window ($$$) {
 	}
 	return $args;
     }
-    
+
+    $val ||= $window_state{$win} ? 'hide' : 'show';
+
     unless ($win && $val) {
 	Xmms::Usage->window;
 	return;
     }
 
     my $meth = "${win}_win_toggle";
+    $window_state{$win} = $val eq 'show';
 
     if ($remote->can($meth)) {
-	$remote->$meth($val eq 'show');
+	$remote->$meth($window_state{$win});
     }
     else {
 	Xmms::Usage->window;
@@ -930,13 +1124,14 @@ sub current {
 sub pause   { $remote->pause }
 sub stop    { $remote->stop }
 sub clear   { 
+    %Xmms::CD::order = ();
     if ($use_sc) {
 	$sc->clear;
     }
     $remote->playlist_clear;
 }
 sub shuffle { $remote->toggle_shuffle }
-sub eject   { Xmms::CD->new->eject }
+sub eject   { shift; Xmms::CD->new->eject(@_) }
 
 sub Xmms::urlcomplete {
     my $arg = shift;
@@ -951,8 +1146,30 @@ sub Xmms::urlcomplete {
     }
 }
 
+my $xmms_scalars = sub {
+    package Xmms;
+    no strict;
+    grep { defined $$_ } keys %Xmms::;
+};
+
+sub Xmms::interp {
+    my $string = shift;
+    eval "{package Xmms; no strict; qq($string)}";
+}
+
 sub Xmms::filecomplete {
     my $arg = shift;
+
+    if (my $earg = Xmms::interp($arg)) {
+	$arg = $earg;
+    }
+    else {
+	if ($arg =~ s/^\$//) {
+	    Xmms::rl_termchar('/');
+	    return map { "\$$_" } grep /^$arg/, $xmms_scalars->();
+	}
+    }
+
     my $dpath = shift || \&Xmms::filesel_path;
     if ($arg eq '-') {
 	if (my $path = $dpath->()) {
@@ -960,6 +1177,18 @@ sub Xmms::filecomplete {
 	    Xmms::rl_termchar('/');
 	    return $path;
 	}
+    }
+    elsif ($arg eq '!') {
+	if (my $path = Xmms::historysel()) {
+	    $path =~ s:/$::;
+	    Xmms::rl_termchar('/');
+	    return $path;
+	}
+    }
+
+    if ($arg =~ /\#$/) {
+	my $id = Xmms::CD->new->id;
+	$arg =~ s/\#$/$id/ if $id;
     }
 
     my @retval = glob($arg."*");
@@ -976,13 +1205,32 @@ sub Xmms::filecomplete {
     }
 }
 
+sub Xmms::range {
+    my $string = shift;
+    $string =~ s/\s+//g;
+    my @entries = split ',', $string;
+    my @range;
+    for (@entries) {
+	if (/^\d+$/) {
+	    push @range, $_;
+	}
+	elsif (/^(\d+)\.\.(\d+)$/) {
+	    push @range, $1 .. $2;
+	}
+    }
+    \@range;
+}
+
 sub delete ($$) {
     my($self, $args) = @_;
     if ($is_cpl) {
 	my $len = $remote->get_playlist_length;
 	return grep /^$args/, (1..$len);
     }
-    $remote->playlist_delete($args-1);
+
+    for (sort { $b <=> $a } @{ Xmms::range($args) }) {
+	$remote->playlist_delete($_-1);
+    }
 }
 
 sub add ($$) {
@@ -1086,11 +1334,12 @@ my @SortCmds = sort grep { Xmms::Sort->can($_) } keys %Xmms::Sort::;
 sub Xmms::SortCmds { \@SortCmds }
 
 sub sort ($$) {
-    my($self, $args) = @_;
+    my($self, $str) = @_;
+    my($args, $subargs) = split /\s+/, $str, 2;
 
     unless ($is_cpl) {
 	if (my $meth = Xmms::Sort->can($args)) {
-	    $meth->();
+	    $meth->($subargs);
 	}
 	else {
 	    print Xmms::highlight(Error => "unknown sort method: $args\n");
@@ -1105,8 +1354,9 @@ sub play ($;$) {
     my($self, $args) = @_;
 
     unless ($is_cpl) {
+	%Xmms::CD::order = ();
 	if ($args) {
-	    if (-d $args) {
+	    if ($args ne '/cdrom' and -d $args) {
 		Xmms::filesel_path($args);
 	    }
 	    $remote->playlist([Xmms::filecomplete($args)]);
@@ -1277,8 +1527,13 @@ sub files ($$) {
     Xmms::playlist_do("file", $args);
 }
 
-sub repeat  { 
+sub repeat (;$)  { 
     my($self, $args) = @_;
+
+    if ($is_cpl) {
+	return grep /^$args/, qw(reset);
+    }
+
     unless ($use_sc) {
 	$remote->toggle_repeat;
 	return;
@@ -1287,6 +1542,9 @@ sub repeat  {
 	my($track, $num) = split /\s+/, $args, 2;
 	if ($track && $num) {
 	    $sc->repeat_STORE($track, $num);
+	}
+	elsif ($track eq 'reset') {
+	    $sc->repeat_reset;
 	}
     }
     else {
@@ -1432,7 +1690,7 @@ sub info ($$) {
     }
 
     my $track_is_num = ($track =~ /^\d+$/);
-    if ($track_is_num and $track > $pos) {
+    if ($track_is_num and $track > $len) {
 	print Xmms::highlight(Error => "no such track\n");
 	return;
     }
@@ -1549,6 +1807,13 @@ The complete list of shell commands is also available via the I<help> command.
 Add files to the current playlist, without clearing the current playlist.
 See also: I<play> description of the special `-' character.
 
+=item alias
+
+Alias a long command to one of your own definition, e.g.:
+
+ xmms> alias cd play /cdrom
+ xmms> cd
+
 =item balance
 
 View or change the balance.
@@ -1564,12 +1829,18 @@ frequency and mode.
 
 =item delete
 
-Delete a track from the playlist.  (NOTE: at the time of this writing,
+Delete tracks from the playlist.  (NOTE: at the time of this writing,
 the I<patches/xmms-playlist-delete.pat> patch must be applied to 
 xmms-0.9.1.)
 Example:
 
  xmms> delete 3
+
+This command can also handle ranges, e.g. to play just your favorite
+tracks from and audio cd:
+
+ xmms> play /cdrom
+ xmms> delete 5, 7..10
 
 =item dig
 
@@ -1602,7 +1873,23 @@ See also: I<play> description of the special `-' character.
 
 Just like pressing the I<eject> button on the gui, pops up the I<load
 file> window.  However, if an audio cd is/was playing (and Audio::CD
-is installed), the cd tray will pop open.
+is installed), the cd tray will pop open.  If an audio cd is I<not> 
+playing, but you want to open the tray, provided the I<cd> argument:
+
+ xmms> eject cd
+
+=item export
+
+Make environment variables available to the shell, e.g.:
+
+ xmms> export PWD
+ xmms> play $PWD/fav.mp3
+
+ xmms> export MP3_HOME=/usr/local/mp3
+ xmms> play $MP3_HOME/fav.mp3
+
+ xmms> export CD="play /cdrom"
+ xmms> $CD
 
 =item files
 
@@ -1614,7 +1901,7 @@ Example:
 
 To negate, use the ! prefix:
 
- xmms> files !fire    #removes files containing `file' from the playlist
+ xmms> files !fire    #removes files containing `fire' from the playlist
 
 =item help
 
@@ -1808,6 +2095,15 @@ Sort by file modification time, from new to old.
 
 Sort by file modification time, from old to new.
 
+=item order
+
+Sort the list by order of your choice, e.g.:
+
+ xmms> play /cdrom
+ xmms> sort order 3, 10, 6..9, 1 
+
+Tracks not specified in the new order are left out of the new playlist.
+
 =item path
 
 Sort by filename, including the path name.
@@ -1972,6 +2268,20 @@ complex commands in your history buffer.
 
 Effective use of these bounds keys can actually make up a half-assed
 sampler too.
+
+The following key bindings will toggle the xmms windows:
+
+=over 4
+
+=item M-a : all windows
+
+=item M-w : main window
+
+=item M-l : playlist window
+
+=item M-q : equalizer window
+
+=back
 
 =head1 Command Aliases
 

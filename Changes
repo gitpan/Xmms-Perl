@@ -4,17 +4,59 @@ Changes - Perl Xmms change file
 
 =head1 CREDITS
 
-Thanks to the xmms team for an outstanding mp3 player.
+Thanks to:
 
-Thanks to Brian Moseley <ix@maz.org> for lots of help squashing bugs
+the xmms team for an outstanding mp3 player.
+
+Brian Moseley <ix@maz.org> for lots of help squashing bugs
 and feature suggestions.
 
-Thanks to John Sachs <sax@cp.net> for lots of help squashing bugs and
+John Sachs <sax@cp.net> for lots of help squashing bugs and
 feature suggestions.
+
+Cutter Brown <cutter@cp.net> for help squashing bugs.
 
 =head1 CHANGES
 
 =over 3
+
+=item 0.08 - December 27, 1999
+
+xmms-playlist-delete.pat updated for xmms-0.9.5.1
+
+Xmms::shell configuration is now written to it's own
+~/.xmms/config.perl file to prevent loss of config changes made by
+xmms itself
+
+$variables set by `export' or `+ <perl code>' will be interpolated in
+cmd strings
+
+added `alias' and `export' functions
+
+added key bindings to toggle xmms windows
+
+fix bug where readline::rl_bind was called w/o Term::Readline::Perl
+installed
+
+fixed `info' "no such track" bug
+
+commands prefixed with `+' will be evaled as Perl code
+
+unknown commands will be treated as shell commands, if found in $PATH
+
+`!' will expand to the selected history (script) path
+
+new `sort order ...' sort option
+
+`history' command will look in default paths for scripts
+
+`#' in a filename will expand to the audio cd cddb id (Audio::CD required)
+
+`delete' command can handle ranges
+
+`repeat reset' will reset the repeat counter (w/ `change on')
+
+M-e bound to `eject'
 
 =item 0.07 - July 11, 1999
 

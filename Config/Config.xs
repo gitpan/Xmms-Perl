@@ -24,6 +24,17 @@ xmms_cfg_file(self)
     OUTPUT:
     RETVAL
 
+SV *
+xmms_cfg_perlfile(self)
+    SV *self
+
+    CODE:
+    RETVAL = newSV(0);
+    sv_setpvf(RETVAL, "%s/.xmms/config.perl", g_get_home_dir());
+
+    OUTPUT:
+    RETVAL
+
 Xmms::Config
 xmms_cfg_new(svclass, filename=NULL)
     SV *svclass

@@ -249,6 +249,18 @@ static void sc_clear(sc *obj)
     g_hash_table_foreach_remove(obj->crop, hash_rm_gint, NULL);
 }
 
+static void sc_repeat_reset_func(gpointer key, gpointer val, gpointer data)
+{
+    ((sc_repeat *)val)->counter = ((sc_repeat *)val)->num;
+}
+
+static void sc_repeat_reset(sc *obj)
+{
+    sc_lock(obj);
+    g_hash_table_foreach(obj->repeat, sc_repeat_reset_func, NULL);
+    sc_unlock(obj);
+}
+
 static void sc_DESTROY(sc *obj)
 {
 #if 0
@@ -376,4 +388,8 @@ sc_crop_FETCH(obj, key)
     
 void
 sc_clear(obj)
+    Xmms::SongChange obj
+
+void
+sc_repeat_reset(obj)
     Xmms::SongChange obj
