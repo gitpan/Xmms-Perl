@@ -12,13 +12,16 @@ and feature suggestions.
 Thanks to John Sachs <sax@cp.net> for lots of help squashing bugs and
 feature suggestions.
 
-Thanks to RunD <RDespinois@cipcinsa.insa-lyon.fr> for helping me build 
-a large rare + live + remix prodigy collection that led to my own
-demand for this tool.
-
 =head1 CHANGES
 
 =over 3
+
+=item 0.07 - July 11, 1999
+
+`eject' command will open the cd tray if playing an audio cd 
+(Audio::CD required)
+
+added cddb support (Audio::CD required)
 
 =item 0.06 - June 27, 1999
 

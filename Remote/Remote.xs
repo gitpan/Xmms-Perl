@@ -427,8 +427,12 @@ void
 xmms_remote_toggle_shuffle(session)
     Xmms::Remote session
 
-MODULE = Xmms::Remote   PACKAGE = Xmms
+MODULE = Xmms::Remote   PACKAGE = Xmms    PREFIX = xmms_
 
 SV *
 size_string(size)
     size_t size
+
+void
+xmms_usleep(usec)
+    gint usec

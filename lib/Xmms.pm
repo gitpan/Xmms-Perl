@@ -14,7 +14,7 @@ use Data::Dumper ();
     no strict;
     @ISA     = qw(Exporter);
     @EXPORT  = qw(shell);
-    $VERSION = '0.06';
+    $VERSION = '0.07';
 }
 
 my $Help;
@@ -123,6 +123,10 @@ sub init {
     if ($@) {
 	*color = sub { "" };
     }
+
+    eval {
+	require Audio::CD;
+    };
 }
 
 sub shell {
@@ -155,6 +159,9 @@ sub boot {
       "available (install Bundle::Xmms)";
 
     print "MPEG::MP3Info support.....", ($INC{'MPEG/MP3Info.pm'} ?
+      "enabled" : "available"), "\n";
+
+    print "Audio::CD support.........", ($INC{'Audio/CD.pm'} ?
       "enabled" : "available"), "\n";
 
     print "Term::ANSIColor support...", ($INC{'Term/ANSIColor.pm'} ?
@@ -312,8 +319,9 @@ sub cpl {
 }
 
 sub playlist_is_empty {
+    my $no_msg = shift;
     unless ($remote->get_playlist_length) {
-	print Xmms::highlight(Error => "playlist is empty\n");
+	print Xmms::highlight(Error => "playlist is empty\n") unless $no_msg;
 	return 1;
     }
 
@@ -468,6 +476,62 @@ sub highlight {
     color($colors{$how} ? $colors{$how} : $how), $what, color('reset'), $nl;
 }
 
+package Xmms::CD;
+
+sub new {
+    my $class = shift;
+
+    my $id = 0;
+
+    if ($INC{'Audio/CD.pm'}) {
+	$id = Audio::CD->init;
+    }
+
+    bless {
+	   id => $id,
+	  }, ref($class) || $class;
+}
+
+sub eject {
+    my $self = shift;
+    my $title = $remote->get_playlist_file(0);
+    unless ($title =~ /\.cda$/ and $self->{id}) {
+	$remote->eject;
+	return;
+    }
+    $remote->stop;
+    1 while $remote->is_playing;
+    for (1..3) {
+	my $rc = $self->{id}->eject;
+	last if $rc == 0;
+	sleep(1);
+    }
+}
+
+sub get_playlist_title {
+    my($self, $ix) = @_;
+    my $title = $remote->get_playlist_title($ix);
+
+    unless ($title =~ /CD Audio Track/ and $self->{id}) {
+	return $title;
+    }
+
+    unless ($self->{tracks}) {
+	my $cd = $self->{id}->stat;
+	my $data = $self->{id}->cddb->lookup;
+	$self->{data} = $data;
+	$self->{cd} = $cd;
+	$self->{tracks} = $data->tracks($cd);
+    }
+
+    my $name = $self->{tracks}->[$ix]->name;
+    if ($name =~ /Unknown/) {
+	return $title;
+    }
+
+    return join ' - ', $self->{data}->artist, $name;
+}
+
 package Xmms::Sort;
 
 sub reverse {
@@ -579,6 +643,7 @@ package Xmms::Cmd;
 sub help { print {Xmms::pager()} Xmms::helpstr() }
 
 sub quit {
+    $remote->stop;
     Xmms::resume_config(1);
     print Xmms::highlight(Msg => "Goodbye\n");
     kill 9, $Pid if $Pid;
@@ -601,6 +666,7 @@ sub resume {
 }
 
 sub Xmms::resume_config {
+    return if Xmms::playlist_is_empty(1);
     my $save = shift;
     if ($save) {
 	my $resume = {
@@ -852,7 +918,7 @@ sub current {
 
     my $track = $remote->get_playlist_pos;
     print Xmms::highlight(Msg => sprintf "%d - %s\n", $track+1, 
-			    $remote->get_playlist_title($track)); 
+			  Xmms::CD->new->get_playlist_title($track)); 
 
     my($rate, $freq, $nch) = $remote->get_info;
     print Xmms::highlight(Msg => sprintf "[%s] [%d kbps][%d kHz][%s]\n", 
@@ -870,7 +936,7 @@ sub clear   {
     $remote->playlist_clear;
 }
 sub shuffle { $remote->toggle_shuffle }
-sub eject   { $remote->eject }
+sub eject   { Xmms::CD->new->eject }
 
 sub Xmms::urlcomplete {
     my $arg = shift;
@@ -1089,6 +1155,11 @@ sub dig ($$;$) {
 	$args = $pat;
     }   
     
+    unless ($args) {
+	print Xmms::highlight(Error => "no search pattern specified\n");
+	return;
+    }
+
     print Xmms::highlight(Msg => "searching in $dir...\n");
     my $depth = 0;
     Xmms::finddepth(sub {
@@ -1131,12 +1202,13 @@ sub track ($;$) {
     my $title_maybe = $args;
     my $pos = $remote->get_playlist_pos;
     my $len = $remote->get_playlist_length;
+    my $cd = Xmms::CD->new;
 
     if (!$args or $args eq ' ') {
 	my @retval;
 	for (0..$len-1) {
 	    my $num = $_ + 1;
-	    my $title = $remote->get_playlist_title($_);
+	    my $title = $cd->get_playlist_title($_);
 	    my $desc = "$num - $title";
 	    my $jt = " {$jtime{$num}}" if $jtime{$num};
 	    my($ctime, $repeat);
@@ -1179,7 +1251,7 @@ sub track ($;$) {
 	my %titles;
 
 	for (0..$len-1) {
-	    my $title = $remote->get_playlist_title($_);
+	    my $title = $cd->get_playlist_title($_);
 	    $title =~ s/ /-/g;
 	    $titles{$title} = $_; 
 	}
@@ -1529,7 +1601,8 @@ See also: I<play> description of the special `-' character.
 =item eject
 
 Just like pressing the I<eject> button on the gui, pops up the I<load
-file> window.
+file> window.  However, if an audio cd is/was playing (and Audio::CD
+is installed), the cd tray will pop open.
 
 =item files
 

@@ -121,7 +121,7 @@ static void sc_repeat_change(sc *obj, gint *pos)
 
     scr = sc_repeat_FETCH(obj, *pos);
     if (scr && !scr->counter) {
-	scr->counter = scr->num; /* reset counter */
+	//scr->counter = scr->num; /* reset counter */
     }
 }
 
